@@ -1,16 +1,59 @@
 let CONFIG = {
     name: 'Bulb',
     device_ip: '192.168.0.7',
+    switch_mode_timeout: 10,
     steps: 10,
     steps_temp: 150,
     steps_color: 25,
     blink_time: 1000,
+    min_temp: 3000,
+    max_temp: 6500,
+    min_color: 0,
+    max_color: 255,
+    min_brightness: 1,
+    max_brightness: 100,
+    min_gain: 1,
+    max_gain: 100,
 };
 
 let MODES = {
     _default: 'default',
-    temperature: 'temperature',
+    temp: 'temp',
     rgb: 'rgb',
+};
+
+let COLOR_MODES = {
+    white: 'white',
+    color: 'color'
+};
+
+let COLORS = {
+    white: 'white',
+    red: 'red',
+    green: 'green',
+    blue: 'blue',
+};
+
+let DIRECTIONS = {
+    up: 'up',
+    down: 'down'
+};
+
+let EVENTS = {
+    double_push: 'double_push',
+    single_push: 'single_push',
+    long_push: 'long_push'
+};
+
+let SETTINGS = {
+    brightness: 'brightness',
+    temp: 'temp',
+    gain: 'gain',
+    turn: 'turn',
+    mode: 'mode',
+    red: 'red',
+    green: 'green',
+    blue: 'blue'
 };
 
 let baseUrl = 'http://' + CONFIG.device_ip + '';
@@ -49,7 +92,7 @@ function setStates(settings) {
         },
         null,
         null);
-}
+};
 
 function setState(url, value) {
 
@@ -73,7 +116,7 @@ function setState(url, value) {
 function sleep(milliseconds, callback, state) {
 
     return Timer.set(milliseconds, false, callback, state);
-}
+};
 
 let protoDevice = {
     name: CONFIG.name,
@@ -94,29 +137,36 @@ let protoDevice = {
     },
 
     state: {
-        switchMode: '',
-        brightness: 0,
-        gain: 0,
-        temp: 0,
-        redColor: 0,
-        greenColor: 0,
-        blueColor: 0,
-        colorMode: '',
-        currentColorChange: '',
-        event: '',
+        isOn: null,
+        switchMode: null,
+        brightness: null,
+        gain: null,
+        temp: null,
+        redColor: null,
+        greenColor: null,
+        blueColor: null,
+        colorMode: null,
+        currentColorChange: null,
+        event: null,
         timer: null,
-        timerRunning: false,
-        timeEllapsed: 0,
+        timerRunning: null,
+        timeEllapsed: null,
     },
 
     init: function () {
-        this.state.switchMode = 'default';
+
+        if (this.state.timerRunning === true) {
+            this.stopTimer();
+        }
+
+        this.state.isOn = null;
+        this.state.switchMode = MODES._default;
         this.state.brightness = 0;
         this.state.gain = 0;
-        this.state.temp = 3000;
-        this.state.redColor = 100;
-        this.state.greenColor = 100;
-        this.state.blueColor = 100;
+        this.state.temp = 0;
+        this.state.redColor = 0;
+        this.state.greenColor = 0;
+        this.state.blueColor = 0;
         this.state.colorMode = 'undefined';
         this.state.currentColorChange = 'undefined';
         this.state.event = 'undefined';
@@ -125,7 +175,7 @@ let protoDevice = {
         this.state.timerRunning = false;
     },
 
-    getState: function (callback, event, device) {
+    run: function (callback, event, device) {
 
         Shelly.call("http.get",
             {
@@ -135,6 +185,7 @@ let protoDevice = {
 
                 let config = JSON.parse(response.body);
 
+                o.obj.state.isOn = config.ison;
                 o.obj.state.colorMode = config.mode;
                 o.obj.state.brightness = config.brightness;
                 o.obj.state.gain = config.gain;
@@ -150,11 +201,19 @@ let protoDevice = {
 
     changeColorMode: function () {
 
-        if (this.state.colorMode === 'white') {
-            this.state.colorMode = 'color';
+        if (this.state.colorMode === COLOR_MODES.white) {
+            this.state.colorMode = COLOR_MODES.color;
+
+            if (this.state.switchMode === MODES.temp) {
+                this.changeMode(MODES.rgb);
+            }
         }
         else {
-            this.state.colorMode = 'white';
+            this.state.colorMode = COLOR_MODES.white;
+
+            if (this.state.switchMode === MODES.rgb) {
+                this.changeMode(MODES.temp);
+            }
         }
 
         setStates({ 'mode': this.state.colorMode });
@@ -173,11 +232,10 @@ let protoDevice = {
             device.state.timeEllapsed += 1;
             print('Time ellapsed: ', device.state.timeEllapsed);
 
-            if (device.state.timeEllapsed === 10) {
+            if (device.state.timeEllapsed >= CONFIG.switch_mode_timeout) {
 
                 if (device.state.switchMode !== MODES._default) {
-                    print('switch mode');
-                    device.changeMode();
+                    device.changeMode(MODES._default);
                 }
 
                 device.stopTimer();
@@ -200,26 +258,26 @@ let protoDevice = {
         this.state.timeEllapsed = 0;
     },
 
-    changeMode: function () {
+    changeMode: function (mode) {
 
-        if (this.state.switchMode === MODES._default) {
-            if (this.state.colorMode === 'white') {
+        if (typeof(mode) !== 'undefined' || this.state.switchMode === MODES._default) {
+            if (mode === MODES.temp || this.state.colorMode === COLOR_MODES.white) {
 
-                if (this.state.colorMode !== 'white') {
+                if (this.state.colorMode !== COLOR_MODES.white) {
                     this.changeColorMode();
                 }
-                this.state.switchMode = MODES.temperature;
+                this.state.switchMode = MODES.temp;
                 this.blink('temp', CONFIG.blink_time);
             }
             else {
 
-                if (this.state.colorMode !== 'color') {
+                if (this.state.colorMode !== COLOR_MODES.color) {
                     this.changeColorMode();
                 }
 
                 this.state.switchMode = MODES.rgb;
-                this.state.currentColorChange = 'red';
-                this.blink('red', CONFIG.blink_time);
+                this.state.currentColorChange = COLORS.red;
+                this.blink(COLORS.red, CONFIG.blink_time);
             }
 
             this.startTimer();
@@ -228,11 +286,11 @@ let protoDevice = {
             this.state.switchMode = MODES._default;
             this.state.currentColorChange = 'undefined';
 
-            if (this.state.colorMode === 'white') {
+            if (this.state.colorMode === COLOR_MODES.white) {
                 this.blink('temp', CONFIG.blink_time);
             }
             else {
-                this.blink('green', CONFIG.blink_time);
+                this.blink(COLORS.green, CONFIG.blink_time);
             }
 
             this.stopTimer();
@@ -241,26 +299,24 @@ let protoDevice = {
         print('switch mode changed to: ' + this.state.switchMode);
         return this.state.switchMode;
     },
+
     switchColorChange: function () {
 
         this.resetTimer();
 
-        if (this.state.currentColorChange === 'red') {
+        if (this.state.currentColorChange === COLORS.red) {
 
-            this.state.currentColorChange = 'green';
-            this.blink('green', CONFIG.blink_time);
-            return true;
+            this.state.currentColorChange = COLORS.green;
+            this.blink(COLORS.green, CONFIG.blink_time);
         }
-        else if (this.state.currentColorChange === 'green') {
+        else if (this.state.currentColorChange === COLORS.green) {
 
-            this.state.currentColorChange = 'blue';
-            this.blink('blue', CONFIG.blink_time);
-            return true;
+            this.state.currentColorChange = COLORS.blue;
+            this.blink(COLORS.blue, CONFIG.blink_time);
         }
-        else if (this.state.currentColorChange = 'blue') {
-            this.state.currentColorChange = 'red';
-            this.blink('red', CONFIG.blink_time);
-            return true;
+        else if (this.state.currentColorChange = COLORS.blue) {
+            this.state.currentColorChange = COLORS.red;
+            this.blink(COLORS.red, CONFIG.blink_time);
         }
     },
 
@@ -275,52 +331,52 @@ let protoDevice = {
         let min = 1;
         let max = 100;
 
-        if (setting === 'brightness') {
+        if (setting === SETTINGS.brightness) {
             value = this.state.brightness;
             url = this.url.brightness;
             steps = CONFIG.steps;
-            min = 1;
-            max = 100;
+            min = CONFIG.min_brightness;
+            max = CONFIG.max_brightness;
         }
-        else if (setting === 'gain') {
+        else if (setting === SETTINGS.gain) {
             value = this.state.gain;
             url = this.url.gain;
             steps = CONFIG.steps;
-            min = 1;
-            max = 100;
+            min = CONFIG.min_gain;
+            max = CONFIG.max_gain;
         }
-        else if (setting === 'temperature') {
+        else if (setting === SETTINGS.temp) {
             value = this.state.temp;
             url = this.url.temp;
             steps = CONFIG.steps_temp;
-            min = 3000;
-            max = 6400;
+            min = CONFIG.min_temp;
+            max = CONFIG.max_temp;
         }
-        else if (setting === 'redColor') {
+        else if (setting === SETTINGS.red) {
             value = this.state.redColor;
             url = this.url.redColor;
             steps = CONFIG.steps_color;
-            min = 1;
-            max = 255;
+            min = CONFIG.min_color;
+            max = CONFIG.max_color;
         }
-        else if (setting === 'greenColor') {
+        else if (setting === SETTINGS.green) {
             value = this.state.greenColor;
             url = this.url.greenColor;
             steps = CONFIG.steps_color;
-            min = 1;
-            max = 255;
+            min = CONFIG.min_color;
+            max = CONFIG.max_color;
         }
-        else if (setting === 'blueColor') {
+        else if (setting === SETTINGS.blue) {
             value = this.state.blueColor;
             url = this.url.blueColor;
             steps = CONFIG.steps_color;
-            min = 1;
-            max = 255;
+            min = CONFIG.min_color;
+            max = CONFIG.max_color;
         }
 
         let newValue = value;
 
-        if (direction === 'up') {
+        if (direction === DIRECTIONS.up) {
             newValue = this.increaseValue(value, steps, max);
         }
         else {
@@ -333,44 +389,42 @@ let protoDevice = {
 
     setBrightness: function (direction) {
 
-        if (this.state.colorMode === 'white') {
-            this.state.brightness = this.changeState('brightness', direction);
+        if (this.state.colorMode === COLOR_MODES.white) {
+            this.state.brightness = this.changeState(SETTINGS.brightness, direction);
         }
         else {
-            this.state.gain = this.changeState('gain', direction);
+            this.state.gain = this.changeState(SETTINGS.gain, direction);
         }
     },
 
     setTemperature: function (direction) {
-        this.state.temp = this.changeState('temperature', direction);
+        this.state.temp = this.changeState(SETTINGS.temp, direction);
     },
 
     setRed: function (direction) {
-        this.state.redColor = this.changeState('redColor', direction);
+        this.state.redColor = this.changeState(SETTINGS.red, direction);
     },
 
     setGreen: function (direction) {
-        this.state.greenColor = this.changeState('greenColor', direction);
+        this.state.greenColor = this.changeState(SETTINGS.green, direction);
     },
 
     setBlue: function (direction) {
-        this.state.blueColor = this.changeState('blueColor', direction);
+        this.state.blueColor = this.changeState(SETTINGS.blue, direction);
     },
 
     toggle: function () { setStates({'turn': 'toggle'}) },
 
     setRgb: function (direction) {
 
-        print(this.state.currentColorChange);
-
-        if (this.state.currentColorChange === 'red') {
-            this.state.redColor = this.changeState('redColor', direction);
+        if (this.state.currentColorChange === COLORS.red) {
+            this.state.redColor = this.changeState(SETTINGS.red, direction);
         }
-        else if (this.state.currentColorChange === 'green') {
-            this.state.greenColor = this.changeState('greenColor', direction);
+        else if (this.state.currentColorChange === COLORS.green) {
+            this.state.greenColor = this.changeState(SETTINGS.green, direction);
         }
-        else if (this.state.currentColorChange === 'blue') {
-            this.state.blueColor = this.changeState('blueColor', direction);
+        else if (this.state.currentColorChange === COLORS.blue) {
+            this.state.blueColor = this.changeState(SETTINGS.blue, direction);
         }
     },
     increaseValue: function (value, steps, max) {
@@ -400,41 +454,41 @@ let protoDevice = {
             lastStateTemp: this.state.temp,
         };
 
-        if (color === 'red') {
+        if (color === COLORS.red) {
             setStates({
-                'mode': 'color',
-                'red': 255,
-                'green': 0,
-                'blue': 0,
+                mode: COLOR_MODES.color,
+                red: 255,
+                green: 0,
+                blue: 0,
             });
         }
-        else if (color === 'green') {
+        else if (color === COLORS.green) {
             setStates({
-                'mode': 'color',
-                'red': 0,
-                'green': 255,
-                'blue': 0,
+                mode: COLOR_MODES.color,
+                red: 0,
+                green: 255,
+                blue: 0,
             });
         }
-        else if (color === 'blue') {
+        else if (color === COLORS.blue) {
             setStates({
-                'mode': 'color',
-                'red': 0,
-                'green': 0,
-                'blue': 255,
+                mode: COLOR_MODES.color,
+                red: 0,
+                green: 0,
+                blue: 255,
             });
         }
         else if (color === 'temp') {
             if (this.state.temp >= 5100) {
                 setStates({
-                    'mode': 'white',
-                    'temp': 3000
+                    mode: COLOR_MODES.white,
+                    temp: CONFIG.min_temp
                 });
             }
             else {
                 setStates({
-                    'mode': 'white',
-                    'temp': 6400
+                    mode: COLOR_MODES.white,
+                    temp: CONFIG.max_temp
                 });
             }
         }
@@ -444,15 +498,15 @@ let protoDevice = {
             if (udState.color === 'temp') {
 
                 setStates({
-                    'temp': udState.lastStateTemp,
+                    temp: udState.lastStateTemp,
                 });
             }
             else {
 
                 setStates({
-                    'red': udState.lastStateRed,
-                    'green': udState.lastStateGreen,
-                    'blue': udState.lastStateBlue,
+                    red: udState.lastStateRed,
+                    green: udState.lastStateGreen,
+                    blue: udState.lastStateBlue,
                 });
             }
         }, state);
@@ -465,47 +519,53 @@ _device.init();
 Shelly.addEventHandler(
     function (event, device) {
 
-        if (event.info.event !== 'single_push' &&
-            event.info.event !== 'double_push' &&
-            event.info.event !== 'long_push') {
+        if (event.info.event !== EVENTS.single_push &&
+            event.info.event !== EVENTS.double_push &&
+            event.info.event !== EVENTS.long_push) {
             return true;
         }
 
         device.event = event;
-        device.getState(function (device) {
+        device.run(function (device) {
+
+            if (device.state.isOn !== true) {
+
+                device.toggle();
+                return true;
+            }
 
             let event = device.event.info.event;
 
-            if (event === 'long_push') {
+            if (event === EVENTS.long_push) {
                 device.changeMode();
                 return true;
             }
 
-            print(event);
+            //print(event);
 
             if (device.event.info.id === 0) {
                 if (device.state.switchMode === MODES.rgb) {
 
-                    device.setRgb('down');
+                    device.setRgb(DIRECTIONS.down);
 
-                    if (event === 'double_push') {
-                        device.setRgb('down');
+                    if (event === EVENTS.double_push) {
+                        device.setRgb(DIRECTIONS.down);
                     }
                 }
-                else if (device.state.switchMode === MODES.temperature) {
+                else if (device.state.switchMode === MODES.temp) {
 
-                    device.setTemperature('down');
+                    device.setTemperature(DIRECTIONS.down);
 
-                    if (event === 'double_push') {
-                        device.setTemperature('down');
+                    if (event === EVENTS.double_push) {
+                        device.setTemperature(DIRECTIONS.down);
                     }
                 }
                 else {
 
-                    device.setBrightness('down');
+                    device.setBrightness(DIRECTIONS.down);
 
-                    if (event === 'double_push') {
-                        device.setBrightness('down');
+                    if (event === EVENTS.double_push) {
+                        device.setBrightness(DIRECTIONS.down);
                     }
                 }
             }
@@ -513,26 +573,26 @@ Shelly.addEventHandler(
 
                 if (device.state.switchMode === MODES.rgb) {
 
-                    device.setRgb('up');
+                    device.setRgb(DIRECTIONS.up);
 
-                    if (event === 'double_push') {
-                        device.setRgb('up');
+                    if (event === EVENTS.double_push) {
+                        device.setRgb(DIRECTIONS.up);
                     }
                 }
-                else if (device.state.switchMode === MODES.temperature) {
+                else if (device.state.switchMode === MODES.temp) {
 
-                    device.setTemperature('up');
+                    device.setTemperature(DIRECTIONS.up);
 
-                    if (event === 'double_push') {
-                        device.setTemperature('up');
+                    if (event === EVENTS.double_push) {
+                        device.setTemperature(DIRECTIONS.up);
                     }
                 }
                 else {
 
-                    device.setBrightness('up');
+                    device.setBrightness(DIRECTIONS.up);
 
-                    if (event === 'double_push') {
-                        device.setBrightness('up');
+                    if (event === EVENTS.double_push) {
+                        device.setBrightness(DIRECTIONS.up);
                     }
                 }
             }
@@ -547,7 +607,7 @@ Shelly.addEventHandler(
 
                     device.switchColorChange();
                 }
-                else {
+                else if (device.state.switchMode === MODES._default) {
 
                     device.changeColorMode();
                 }
